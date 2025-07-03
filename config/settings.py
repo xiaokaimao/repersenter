@@ -21,30 +21,28 @@ DEVICE = "cuda:0"  # 如果可用，使用GPU
 # ResNet 工作流配置
 # ========================================
 
-# --- ResNet 数据集配置 ---
-RESNET_DATASET = "CIFAR10"  # 可选: "CIFAR10", "CIFAR100"
-RESNET_BATCH_SIZE = 64
-
-# --- ResNet 微调配置 ---
-RESNET_FINETUNE_CONFIG = {
+# --- ResNet 统一配置 ---
+RESNET_CONFIG = {
+    # 数据集配置
+    "dataset_name": "CIFAR10",  # 可选: "CIFAR10", "CIFAR100"
+    "batch_size": 64,
+    
+    # 模型配置
     "model_name": "ResNet18",
+    "model_type": "resnet",
+    
+    # 训练配置
     "num_epochs": 50,
     "learning_rate": 1e-3,
     "lambda_reg": 1e-2,  # L2正则化强度
     "label_noise_rate": 0.1,  # 标签噪声比例，用于测试错误检测
+    
+    # Shapley计算配置
+    "num_test_samples_to_use": -1,  # -1表示使用全部测试集
 }
 
-# --- ResNet Shapley值计算配置 ---
-RESNET_SHAPLEY_CONFIG = {
-    "model_type": "resnet",
-    "model_name": RESNET_FINETUNE_CONFIG["model_name"],
-    "dataset_name": RESNET_DATASET,
-    "lambda_reg": RESNET_FINETUNE_CONFIG["lambda_reg"],
-    "label_noise_rate": RESNET_FINETUNE_CONFIG["label_noise_rate"],
-    "num_test_samples_to_use": -1,  # -1表示使用全部测试集
-    # 自动生成checkpoint文件名
-    "checkpoint_name": f"{RESNET_FINETUNE_CONFIG['model_name']}_on_{RESNET_DATASET}_lambda_{RESNET_FINETUNE_CONFIG['lambda_reg']}_noise_{RESNET_FINETUNE_CONFIG['label_noise_rate']}.pth",
-}
+# 自动生成checkpoint文件名
+RESNET_CONFIG["checkpoint_name"] = f"{RESNET_CONFIG['model_name']}_on_{RESNET_CONFIG['dataset_name']}_lambda_{RESNET_CONFIG['lambda_reg']}_noise_{RESNET_CONFIG['label_noise_rate']}.pth"
 
 # ========================================
 # Transformer 工作流配置  
@@ -90,7 +88,7 @@ TRANSFORMER_SHAPLEY_CONFIG = {
 MISLABEL_DETECTION_CONFIG = {
     # ResNet实验
     "resnet": {
-        "shapley_file": f"shapley_vectors_{RESNET_DATASET}_{RESNET_FINETUNE_CONFIG['model_name']}_noise_{RESNET_FINETUNE_CONFIG['label_noise_rate']}.pt",
+        "shapley_file": f"shapley_vectors_{RESNET_CONFIG['dataset_name']}_{RESNET_CONFIG['model_name']}_noise_{RESNET_CONFIG['label_noise_rate']}.pt",
         "analysis_type": "mislabel_detection",  # 错误标签检测
     },
     # Transformer实验
@@ -103,13 +101,14 @@ MISLABEL_DETECTION_CONFIG = {
 # --- 核心数据集实验配置 ---
 CORE_SET_EXPERIMENT_CONFIG = {
     "resnet": {
-        "model_name": RESNET_FINETUNE_CONFIG["model_name"],
-        "dataset_name": RESNET_DATASET,
+        "model_name": RESNET_CONFIG["model_name"],
+        "dataset_name": RESNET_CONFIG["dataset_name"],
         "core_set_percent": 20,  # 选择20%的核心数据
-        "lambda_reg": RESNET_FINETUNE_CONFIG["lambda_reg"],
-        "label_noise_rate": RESNET_FINETUNE_CONFIG["label_noise_rate"],
-        "comparison_train_epochs": 50,
-        "comparison_learning_rate": 1e-3,
+        "lambda_reg": RESNET_CONFIG["lambda_reg"],
+        "label_noise_rate": RESNET_CONFIG["label_noise_rate"],
+        "comparison_train_epochs": RESNET_CONFIG["num_epochs"],
+        "comparison_learning_rate": RESNET_CONFIG["learning_rate"],
+        "checkpoint_name": RESNET_CONFIG["checkpoint_name"],
     },
     "transformer": {
         "model_name": TRANSFORMER_FINETUNE_CONFIG["model_name"],
@@ -127,10 +126,14 @@ CORE_SET_EXPERIMENT_CONFIG = {
 # ========================================
 
 # 为了与现有脚本兼容，保留这些别名
-DATASET = RESNET_DATASET
-BATCH_SIZE = RESNET_BATCH_SIZE
-TRAIN_FROM_SCRATCH_CONFIG = RESNET_FINETUNE_CONFIG
-SHAPLEY_CONFIG = RESNET_SHAPLEY_CONFIG
+RESNET_DATASET = RESNET_CONFIG["dataset_name"]  # 向后兼容
+RESNET_BATCH_SIZE = RESNET_CONFIG["batch_size"]  # 向后兼容
+BATCH_SIZE = RESNET_CONFIG["batch_size"]
+DATASET = RESNET_CONFIG["dataset_name"]
+RESNET_FINETUNE_CONFIG = RESNET_CONFIG  # 向后兼容
+RESNET_SHAPLEY_CONFIG = RESNET_CONFIG  # 现在训练和Shapley使用同一个配置
+TRAIN_FROM_SCRATCH_CONFIG = RESNET_CONFIG
+SHAPLEY_CONFIG = RESNET_CONFIG
 
 # ========================================
 # 使用说明
@@ -140,17 +143,27 @@ SHAPLEY_CONFIG = RESNET_SHAPLEY_CONFIG
 使用指南：
 
 1. ResNet工作流：
-   - 微调: python train_from_scratch.py (使用 RESNET_FINETUNE_CONFIG)
-   - Shapley计算: python calculate_shapley.py (使用 RESNET_SHAPLEY_CONFIG)
-   - 分析: python experiment.py (错误检测分析)
+   - 训练: python experiments/resnet/train.py (使用 RESNET_CONFIG)
+   - Shapley计算: python experiments/resnet/run_shapley.py --accelerate(使用 RESNET_CONFIG)
+   - 分析: python experiments/analysis/run_analysis.py --type resnet
 
 2. Transformer工作流：
-   - 微调: python finetune_qwen3.py (使用 TRANSFORMER_FINETUNE_CONFIG)
-   - Shapley计算: python calculate_shapley_transformer.py (使用 TRANSFORMER_SHAPLEY_CONFIG)
-   - 分析: python experiment.py (数据估值分析)
+   - 微调: python experiments/transformer/finetune.py (使用 TRANSFORMER_FINETUNE_CONFIG)
+   - Shapley计算: python experiments/transformer/run_shapley.py (使用 TRANSFORMER_FINETUNE_CONFIG)
+   - 分析: python experiments/analysis/run_analysis.py --type transformer
 
 3. 核心数据集实验：
-   - python run_core_set_experiment.py (使用 CORE_SET_EXPERIMENT_CONFIG)
+   - python experiments/analysis/core_set_experiment.py (使用 CORE_SET_EXPERIMENT_CONFIG)
+
+4. 统一Shapley工具：
+   - python utils/shapley_utils.py --model-type resnet [--accelerate]
+   - python utils/shapley_utils.py --model-type transformer [--accelerate]
+
+配置说明：
+- RESNET_CONFIG: ResNet的统一配置，包含训练和Shapley计算所需的所有参数
+- TRANSFORMER_FINETUNE_CONFIG: Transformer的训练和Shapley配置
+- 修改相应配置中的参数即可调整实验设置
+- 使用 --accelerate 参数启用多GPU加速
 
 重要提醒：
 - 修改 TRANSFORMER_FINETUNE_CONFIG 中的 model_name 为你的实际模型路径
