@@ -45,19 +45,52 @@ RESNET_CONFIG = {
 RESNET_CONFIG["checkpoint_name"] = f"{RESNET_CONFIG['model_name']}_on_{RESNET_CONFIG['dataset_name']}_lambda_{RESNET_CONFIG['lambda_reg']}_noise_{RESNET_CONFIG['label_noise_rate']}.pth"
 
 # ========================================
+# Vision Transformer (ViT) 工作流配置
+# ========================================
+
+# --- ViT 统一配置 ---
+VIT_CONFIG = {
+    # 数据集配置
+    "dataset_name": "CIFAR10",  # 可选: "CIFAR10", "CIFAR100", "ImageNet"
+    "batch_size": 32,  # ViT通常需要较小的batch size
+    
+    # 模型配置
+    "model_name": "google/vit-base-patch16-224",  # 预训练ViT模型
+    "model_type": "vit",
+    "image_size": 224,  # 输入图像大小
+    
+    # 训练配置
+    "num_epochs": 30,
+    "learning_rate": 5e-4,  # ViT通常用较小的学习率
+    "lambda_reg": 1e-2,
+    "label_noise_rate": 0.1,
+    
+    # ViT特定配置
+    "use_pretrained": True,  # 使用预训练权重
+    "freeze_backbone": False,  # 是否冻结主干网络
+    "use_bf16": True,  # 使用混合精度训练
+    
+    # Shapley计算配置
+    "num_test_samples_to_use": -1,
+}
+
+# 自动生成checkpoint文件名
+VIT_CONFIG["checkpoint_name"] = f"{VIT_CONFIG['model_name'].replace('/', '_')}_on_{VIT_CONFIG['dataset_name']}_lambda_{VIT_CONFIG['lambda_reg']}_noise_{VIT_CONFIG['label_noise_rate']}.pth"
+
+# ========================================
 # Transformer 工作流配置  
 # ========================================
 
 # --- Transformer 数据集配置 ---
-TRANSFORMER_DATASET = "imdb"  # 文本分类数据集
-TRANSFORMER_BATCH_SIZE = 64
+TRANSFORMER_DATASET = "arc-challenge"  # 文本分类数据集，可选: "imdb", "arc-challenge", "mmlu"
+TRANSFORMER_BATCH_SIZE = 128
 
 # --- Transformer 微调配置 ---
 TRANSFORMER_FINETUNE_CONFIG = {
-    "model_name": "/opt/models/Qwen3-0.6B-Base", 
+    "model_name": "/opt/models/Qwen3-4B-Base", 
     "dataset_name": TRANSFORMER_DATASET,
-    "num_epochs": 5,
-    "learning_rate": 5e-4,
+    "num_epochs": 50,
+    "learning_rate": 1e-3,
     "lambda_reg": 1e-2,  # L2正则化强度
     "label_noise_rate": 0.0,  # 文本任务通常不添加人工噪声
     "batch_size": TRANSFORMER_BATCH_SIZE,
@@ -68,6 +101,10 @@ TRANSFORMER_FINETUNE_CONFIG = {
     # Shapley计算优化
     "shapley_buffer_size": 8,  # 多GPU模式下的buffer大小，减少通信频率
 }
+
+# 注释：多项选择题数据集都可以直接使用TRANSFORMER_FINETUNE_CONFIG
+# ARC-Challenge: 修改 dataset_name 为 "arc-challenge"
+# MMLU: 修改 dataset_name 为 "mmlu"
 
 # --- Transformer Shapley值计算配置 ---
 TRANSFORMER_SHAPLEY_CONFIG = {
@@ -81,6 +118,8 @@ TRANSFORMER_SHAPLEY_CONFIG = {
     # 自动生成checkpoint文件名 - 与微调脚本保持一致
     "checkpoint_name": f"finetuned_{TRANSFORMER_FINETUNE_CONFIG['model_name'].replace('/', '_')}_on_{TRANSFORMER_DATASET}_lambda_{TRANSFORMER_FINETUNE_CONFIG['lambda_reg']}_noise_{TRANSFORMER_FINETUNE_CONFIG.get('label_noise_rate', 0.0)}.pth",
 }
+
+# 注释：所有transformer数据集都使用TRANSFORMER_SHAPLEY_CONFIG
 
 # ========================================
 # 数据分析实验配置
@@ -112,10 +151,20 @@ CORE_SET_EXPERIMENT_CONFIG = {
         "comparison_learning_rate": RESNET_CONFIG["learning_rate"],
         "checkpoint_name": RESNET_CONFIG["checkpoint_name"],
     },
+    "vit": {
+        "model_name": VIT_CONFIG["model_name"],
+        "dataset_name": VIT_CONFIG["dataset_name"],
+        "core_set_percent": 30,  # 选择30%的核心数据
+        "lambda_reg": VIT_CONFIG["lambda_reg"],
+        "label_noise_rate": VIT_CONFIG["label_noise_rate"],
+        "comparison_train_epochs": VIT_CONFIG["num_epochs"],
+        "comparison_learning_rate": VIT_CONFIG["learning_rate"],
+        "checkpoint_name": VIT_CONFIG["checkpoint_name"],
+    },
     "transformer": {
         "model_name": TRANSFORMER_FINETUNE_CONFIG["model_name"],
         "dataset_name": TRANSFORMER_DATASET,
-        "core_set_percent": 50,  # 选择20%的核心数据
+        "core_set_percent": 50,  # 选择50%的核心数据
         "lambda_reg": TRANSFORMER_FINETUNE_CONFIG["lambda_reg"],
         "label_noise_rate": TRANSFORMER_FINETUNE_CONFIG["label_noise_rate"],
         "comparison_train_epochs": TRANSFORMER_FINETUNE_CONFIG["num_epochs"],

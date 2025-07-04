@@ -54,6 +54,21 @@ class ModelWrapper(nn.Module):
             else:
                 raise ValueError("无法自动确定Transformer的分类头。")
                 
+        elif model_type == 'vit':
+            # ViT模型结构处理
+            if hasattr(model, 'vit'):
+                self.base_model = model.vit
+            elif hasattr(model, 'base_model'):
+                self.base_model = model.base_model
+            else:
+                raise ValueError("无法自动确定ViT的基础模型。")
+            
+            # ViT的分类头
+            if hasattr(model, 'classifier'):
+                self.classifier = model.classifier
+            else:
+                raise ValueError("无法自动确定ViT的分类头。")
+                
         else: # for ResNet and other vision models
             # 自动检测分类层
             if hasattr(model, 'fc'):
@@ -87,6 +102,26 @@ class ModelWrapper(nn.Module):
             base_outputs = self.base_model(**inputs)
             # 使用最后一层 hidden state 的平均池化作为特征
             features = base_outputs.last_hidden_state.mean(dim=1)
+            # 将特征输入分类头得到logits
+            logits = self.classifier(features)
+        elif self.model_type == 'vit':
+            # 对于ViT，inputs可能是张量或字典
+            if isinstance(inputs, dict):
+                # 如果是字典，直接使用pixel_values
+                pixel_values = inputs.get('pixel_values', inputs)
+            else:
+                # 如果是张量，包装成字典
+                pixel_values = inputs
+            
+            # ViT的前向传播
+            base_outputs = self.base_model(pixel_values=pixel_values)
+            # 使用pooler_output作为特征，如果没有则使用last_hidden_state[:, 0]
+            if hasattr(base_outputs, 'pooler_output') and base_outputs.pooler_output is not None:
+                features = base_outputs.pooler_output
+            else:
+                # 使用CLS token (第一个token)
+                features = base_outputs.last_hidden_state[:, 0]
+            
             # 将特征输入分类头得到logits
             logits = self.classifier(features)
         else:
@@ -442,7 +477,7 @@ def load_data_and_model(model_type='resnet', config=None):
     统一的数据和模型加载函数
     
     Args:
-        model_type: 'resnet' 或 'transformer'
+        model_type: 'resnet', 'transformer', 或 'vit'
         config: 配置字典，如果为None则自动选择
     
     Returns:
@@ -451,12 +486,14 @@ def load_data_and_model(model_type='resnet', config=None):
     if config is None:
         if model_type == 'transformer':
             config = settings.TRANSFORMER_SHAPLEY_CONFIG
+        elif model_type == 'vit':
+            config = settings.VIT_CONFIG
         else:
             config = settings.RESNET_SHAPLEY_CONFIG
     
     print(f"=== Shapley值计算：{model_type.upper()}模型 ===")
     print(f"模型: {config['model_name']}")
-    if model_type == 'transformer':
+    if model_type in ['transformer', 'vit']:
         print(f"数据集: {config['dataset_name']}")
     else:
         print(f"数据集: {settings.RESNET_DATASET}")
@@ -472,6 +509,13 @@ def load_data_and_model(model_type='resnet', config=None):
             dataset_name=config['dataset_name'],
             tokenizer_name=config['model_name'],
             batch_size=settings.BATCH_SIZE,
+            label_noise_rate=config.get('label_noise_rate', 0.0)
+        )
+    elif model_type == 'vit':
+        train_loader, test_loader, _, _, num_classes, original_labels, flipped_indices = utils.get_vit_data_loaders(
+            dataset_name=config['dataset_name'],
+            batch_size=config['batch_size'],
+            image_size=config.get('image_size', 224),
             label_noise_rate=config.get('label_noise_rate', 0.0)
         )
     else:
@@ -500,6 +544,24 @@ def load_data_and_model(model_type='resnet', config=None):
             num_classes=num_classes,
             checkpoint_path=checkpoint_path,
             use_bf16=config.get('use_bf16', False)
+        )
+    elif model_type == 'vit':
+        checkpoint_path = None
+        if 'checkpoint_name' in config:
+            checkpoint_path = os.path.join(settings.CHECKPOINT_DIR, config['checkpoint_name'])
+            if not os.path.exists(checkpoint_path):
+                print(f"⚠️ 警告: 找不到checkpoint文件 {checkpoint_path}")
+                print("将使用预训练ViT模型")
+                checkpoint_path = None
+            else:
+                print(f"✅ 使用checkpoint: {checkpoint_path}")
+        
+        model = utils.get_vit_model(
+            model_name=config['model_name'],
+            num_classes=num_classes,
+            checkpoint_path=checkpoint_path,
+            use_bf16=config.get('use_bf16', False),
+            freeze_backbone=config.get('freeze_backbone', False)
         )
     else:
         model = utils.get_model(
