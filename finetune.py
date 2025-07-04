@@ -7,7 +7,7 @@ import os
 
 # 导入重构后的模块和配置
 import utils
-import settings
+import config.settings as settings
 
 # --- 1. 主程序 ---
 if __name__ == "__main__":

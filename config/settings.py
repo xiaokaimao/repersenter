@@ -65,6 +65,8 @@ TRANSFORMER_FINETUNE_CONFIG = {
     "use_4bit_quantization": False,
     "use_bf16": True,
     "gradient_accumulation_steps": 1,
+    # Shapley计算优化
+    "shapley_buffer_size": 8,  # 多GPU模式下的buffer大小，减少通信频率
 }
 
 # --- Transformer Shapley值计算配置 ---

@@ -1,5 +1,5 @@
 # core_set_experiment.py - 简化版本
-
+# 运行方式: accelerate launch experiments/analysis/core_set_experiment.py --type transformer
 import torch
 import numpy as np
 import matplotlib.pyplot as plt
@@ -14,7 +14,7 @@ from utils.train_utils import train_model_with_accelerate
 def run_core_set_experiment(experiment_type='resnet'):
     """
     简化的核心数据集实验 - 使用统一的多卡训练函数
-    运行方式: accelerate launch experiments/analysis/core_set_experiment.py --type transformer
+    
     """
     config = settings.CORE_SET_EXPERIMENT_CONFIG[experiment_type]
     

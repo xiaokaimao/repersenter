@@ -319,8 +319,32 @@ def calculate_shapley_vectors_multi_gpu(model, train_loader, test_loader, num_cl
 
     # --- 步骤 3: 并行聚合测试集信息 (优化版本) ---
     print("--- Step 3/4: Aggregating similarities over the test set (accelerated & optimized)...")
-    if num_test_samples_to_use == -1 or num_test_samples_to_use > len(test_loader.dataset):
-        num_test_samples_to_use = len(test_loader.dataset)
+    
+    # 修复：在多GPU模式下正确计算每个进程应处理的样本数
+    total_test_samples = len(test_loader.dataset)
+    if num_test_samples_to_use == -1 or num_test_samples_to_use > total_test_samples:
+        # 每个GPU处理总数据的一部分
+        samples_per_process = total_test_samples // accelerator.num_processes
+        remainder = total_test_samples % accelerator.num_processes
+        
+        # 前 remainder 个进程多处理一个样本
+        if accelerator.process_index < remainder:
+            num_test_samples_to_use = samples_per_process + 1
+        else:
+            num_test_samples_to_use = samples_per_process
+    else:
+        # 用户指定的样本数也要按GPU数量分片
+        samples_per_process = num_test_samples_to_use // accelerator.num_processes
+        remainder = num_test_samples_to_use % accelerator.num_processes
+        
+        if accelerator.process_index < remainder:
+            num_test_samples_to_use = samples_per_process + 1
+        else:
+            num_test_samples_to_use = samples_per_process
+    
+    if accelerator.is_main_process:
+        print(f"总测试样本: {total_test_samples}, 每GPU处理: ~{total_test_samples//accelerator.num_processes}, GPU数量: {accelerator.num_processes}")
+        print(f"当前GPU将处理: {num_test_samples_to_use} 个样本")
     
     F_train_gpu = F_train.to(device)
     # 使用更大的批次来减少gather操作次数
@@ -329,11 +353,15 @@ def calculate_shapley_vectors_multi_gpu(model, train_loader, test_loader, num_cl
     
     # 优化：批量处理多个batch减少通信开销
     batch_buffer = []
-    BUFFER_SIZE = 8  # 累积8个batch后再做一次gather
+    # 对于Transformer使用较小的buffer以减少内存压力和通信开销
+    BUFFER_SIZE = 8 if model_type == 'transformer' else 16
     
     with torch.no_grad():
         for batch_idx, batch in enumerate(tqdm(test_loader, desc="Aggregating test similarities", disable=not accelerator.is_main_process)):
+            # 修复：添加更详细的退出条件检查
             if test_samples_processed >= num_test_samples_to_use: 
+                if accelerator.is_main_process:
+                    print(f"达到目标样本数，退出循环: {test_samples_processed}/{num_test_samples_to_use}")
                 break
             
             if model_type == 'transformer':
@@ -349,7 +377,14 @@ def calculate_shapley_vectors_multi_gpu(model, train_loader, test_loader, num_cl
             test_samples_processed += current_batch_size
             
             # 当buffer满了或者是最后一个batch时，进行处理
-            if len(batch_buffer) >= BUFFER_SIZE or batch_idx == len(test_loader) - 1 or test_samples_processed >= num_test_samples_to_use:
+            # 修复：添加更安全的条件检查和调试信息
+            should_process = (
+                len(batch_buffer) >= BUFFER_SIZE or 
+                batch_idx == len(test_loader) - 1 or 
+                test_samples_processed >= num_test_samples_to_use
+            )
+            
+            if should_process:
                 # 合并buffer中的特征
                 if len(batch_buffer) > 1:
                     combined_features = torch.cat(batch_buffer, dim=0)
@@ -372,11 +407,13 @@ def calculate_shapley_vectors_multi_gpu(model, train_loader, test_loader, num_cl
                 batch_buffer.clear()
     
     if accelerator.is_main_process:
-        # 计算所有GPU的总样本数
-        total_samples_processed = test_samples_processed * accelerator.num_processes
-        # 但不要超过实际要处理的样本数
-        total_samples_processed = min(total_samples_processed, num_test_samples_to_use)
+        # 修复：accumulated_kernel_sim已经包含了所有GPU的贡献，不需要再乘以进程数
+        # 因为每次gather操作都会自动聚合所有GPU的结果
+        total_samples_processed = test_samples_processed  # 移除错误的乘法
         avg_kernel_sim = (accumulated_kernel_sim / (total_samples_processed + 1e-8))
+        
+        print(f"实际处理的测试样本数: {total_samples_processed}")
+        print(f"平均核相似度范围: [{avg_kernel_sim.min():.6f}, {avg_kernel_sim.max():.6f}]")
     else:
         avg_kernel_sim = None
 
@@ -545,7 +582,7 @@ def save_shapley_results(shapley_vectors, train_labels, original_labels, flipped
     
     # 生成文件名
     if model_type == 'transformer':
-        model_name_safe = config['model_name'].replace('/', '_').replace('-', '_')
+        model_name_safe = config['model_name'].replace('/', '_')
         dataset_name = config['dataset_name']
     else:
         model_name_safe = config['model_name']
