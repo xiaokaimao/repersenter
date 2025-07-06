@@ -83,14 +83,14 @@ VIT_CONFIG["checkpoint_name"] = f"{VIT_CONFIG['model_name'].replace('/', '_')}_o
 
 # --- Transformer 数据集配置 ---
 TRANSFORMER_DATASET = "arc-challenge"  # 文本分类数据集，可选: "imdb", "arc-challenge", "mmlu"
-TRANSFORMER_BATCH_SIZE = 128
+TRANSFORMER_BATCH_SIZE = 32
 
 # --- Transformer 微调配置 ---
 TRANSFORMER_FINETUNE_CONFIG = {
     "model_name": "/opt/models/Qwen3-4B-Base", 
     "dataset_name": TRANSFORMER_DATASET,
     "num_epochs": 50,
-    "learning_rate": 1e-3,
+    "learning_rate": 1e-4,
     "lambda_reg": 1e-2,  # L2正则化强度
     "label_noise_rate": 0.0,  # 文本任务通常不添加人工噪声
     "batch_size": TRANSFORMER_BATCH_SIZE,

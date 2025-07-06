@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """
 简单的数据集切换脚本
-演示如何在IMDB和ARC-Challenge之间切换，无需额外文件
+支持在多个数据集之间切换：IMDB、ARC-Challenge、MMLU等
 """
 
 import sys

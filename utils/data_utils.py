@@ -1,6 +1,8 @@
 import torch
 import torch.nn as nn
 import torchvision
+import torchvision.datasets as datasets
+from torch.utils.data import DataLoader
 import torchvision.transforms as transforms
 import models
 import os
@@ -527,12 +529,12 @@ def get_mmlu_loaders(tokenizer_name, batch_size, label_noise_rate=0.0):
     tokenized_datasets = raw_datasets.map(preprocess_mmlu_function, batched=True)
     
     # 移除原始列，只保留tokenized的结果
-    columns_to_remove = [col for col in tokenized_datasets["train"].column_names 
+    columns_to_remove = [col for col in tokenized_datasets["auxiliary_train"].column_names 
                         if col not in ['input_ids', 'attention_mask', 'labels']]
     tokenized_datasets = tokenized_datasets.remove_columns(columns_to_remove)
     tokenized_datasets.set_format("torch")
 
-    train_dataset = tokenized_datasets["train"]
+    train_dataset = tokenized_datasets["auxiliary_train"]
     # MMLU通常有validation和test集
     if "test" in tokenized_datasets:
         test_dataset = tokenized_datasets["test"]
